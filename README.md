@@ -40,6 +40,18 @@ python server.py
 
 The server will start on `http://0.0.0.0:5000` by default.
 
+### Quick Test
+
+To test the server, you can use the provided test script:
+
+```bash
+# Start the server in one terminal
+python server.py
+
+# In another terminal, run the test script
+./test_server.sh
+```
+
 ### API Endpoints
 
 #### GET `/v1/models`
