@@ -4,10 +4,12 @@ Hosts an API with OpenAI-compatible endpoints
 """
 
 import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response, stream_with_context
 from functools import wraps
 from dotenv import load_dotenv
 import time
+import requests
+import json
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +21,12 @@ API_KEY = os.getenv('API_KEY', 'Nano')
 CUSTOM_ENDPOINT_URL = os.getenv('CUSTOM_ENDPOINT_URL', '')
 PORT = int(os.getenv('PORT', 5000))
 HOST = os.getenv('HOST', '0.0.0.0')
+
+# Provider API Keys (configure these in .env for actual API access)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+XAI_API_KEY = os.getenv('XAI_API_KEY', '')
 
 # Sample models list - can be customized
 AVAILABLE_MODELS = [
@@ -139,6 +147,7 @@ def index():
         "version": "1.0.0",
         "endpoints": {
             "models": "/v1/models",
+            "chat_completions": "/v1/chat/completions",
             "access_panel": "/access"
         }
     })
@@ -253,6 +262,372 @@ def get_model(model_id):
             "code": "model_not_found"
         }
     }), 404
+
+
+@app.route('/v1/chat/completions', methods=['POST'])
+@require_api_key
+def chat_completions():
+    """
+    Chat completions endpoint
+    Compatible with OpenAI's POST /v1/chat/completions endpoint
+    Forwards requests to configured AI providers based on the model
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "error": {
+                    "message": "Request body is required",
+                    "type": "invalid_request_error",
+                    "param": None,
+                    "code": "invalid_request"
+                }
+            }), 400
+        
+        model = data.get('model')
+        messages = data.get('messages', [])
+        stream = data.get('stream', False)
+        
+        if not model:
+            return jsonify({
+                "error": {
+                    "message": "Missing required parameter: 'model'",
+                    "type": "invalid_request_error",
+                    "param": "model",
+                    "code": "missing_parameter"
+                }
+            }), 400
+        
+        if not messages:
+            return jsonify({
+                "error": {
+                    "message": "Missing required parameter: 'messages'",
+                    "type": "invalid_request_error",
+                    "param": "messages",
+                    "code": "missing_parameter"
+                }
+            }), 400
+        
+        # Route to appropriate provider based on model
+        if model.startswith('gpt-') or model.startswith('o1-'):
+            if not OPENAI_API_KEY:
+                return jsonify({
+                    "error": {
+                        "message": "OpenAI API key not configured. Please set OPENAI_API_KEY in .env file",
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": "api_key_not_configured"
+                    }
+                }), 500
+            
+            return forward_to_openai(data, stream)
+        
+        elif model.startswith('claude-'):
+            if not ANTHROPIC_API_KEY:
+                return jsonify({
+                    "error": {
+                        "message": "Anthropic API key not configured. Please set ANTHROPIC_API_KEY in .env file",
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": "api_key_not_configured"
+                    }
+                }), 500
+            
+            return forward_to_anthropic(data, stream)
+        
+        elif model.startswith('gemini-'):
+            if not GOOGLE_API_KEY:
+                return jsonify({
+                    "error": {
+                        "message": "Google API key not configured. Please set GOOGLE_API_KEY in .env file",
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": "api_key_not_configured"
+                    }
+                }), 500
+            
+            return forward_to_google(data, stream)
+        
+        elif model.startswith('grok-'):
+            if not XAI_API_KEY:
+                return jsonify({
+                    "error": {
+                        "message": "xAI API key not configured. Please set XAI_API_KEY in .env file",
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": "api_key_not_configured"
+                    }
+                }), 500
+            
+            return forward_to_xai(data, stream)
+        
+        else:
+            return jsonify({
+                "error": {
+                    "message": f"Model '{model}' is not supported",
+                    "type": "invalid_request_error",
+                    "param": "model",
+                    "code": "model_not_supported"
+                }
+            }), 400
+    
+    except Exception as e:
+        return jsonify({
+            "error": {
+                "message": f"Internal server error: {str(e)}",
+                "type": "server_error",
+                "param": None,
+                "code": "internal_error"
+            }
+        }), 500
+
+
+def forward_to_openai(data, stream):
+    """Forward request to OpenAI API"""
+    try:
+        headers = {
+            'Authorization': f'Bearer {OPENAI_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers=headers,
+            json=data,
+            stream=stream
+        )
+        
+        if stream:
+            def generate():
+                for chunk in response.iter_content(chunk_size=None):
+                    if chunk:
+                        yield chunk
+            
+            return Response(
+                stream_with_context(generate()),
+                content_type=response.headers.get('content-type', 'text/event-stream')
+            )
+        else:
+            return jsonify(response.json()), response.status_code
+    
+    except Exception as e:
+        return jsonify({
+            "error": {
+                "message": f"Error forwarding to OpenAI: {str(e)}",
+                "type": "server_error",
+                "param": None,
+                "code": "forwarding_error"
+            }
+        }), 500
+
+
+def forward_to_anthropic(data, stream):
+    """Forward request to Anthropic API (Claude)"""
+    try:
+        # Convert OpenAI format to Anthropic format
+        messages = data.get('messages', [])
+        anthropic_messages = []
+        system_message = None
+        
+        for msg in messages:
+            if msg['role'] == 'system':
+                system_message = msg['content']
+            else:
+                anthropic_messages.append({
+                    'role': msg['role'],
+                    'content': msg['content']
+                })
+        
+        anthropic_data = {
+            'model': data.get('model', 'claude-3-5-sonnet-20241022'),
+            'messages': anthropic_messages,
+            'max_tokens': data.get('max_tokens', 4096),
+            'stream': stream
+        }
+        
+        if system_message:
+            anthropic_data['system'] = system_message
+        
+        if 'temperature' in data:
+            anthropic_data['temperature'] = data['temperature']
+        
+        headers = {
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers=headers,
+            json=anthropic_data,
+            stream=stream
+        )
+        
+        if stream:
+            def generate():
+                for chunk in response.iter_content(chunk_size=None):
+                    if chunk:
+                        yield chunk
+            
+            return Response(
+                stream_with_context(generate()),
+                content_type=response.headers.get('content-type', 'text/event-stream')
+            )
+        else:
+            # Convert Anthropic response to OpenAI format
+            anthropic_response = response.json()
+            
+            openai_response = {
+                "id": f"chatcmpl-{anthropic_response.get('id', '')}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": data.get('model'),
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": anthropic_response.get('content', [{}])[0].get('text', '')
+                    },
+                    "finish_reason": anthropic_response.get('stop_reason', 'stop')
+                }],
+                "usage": {
+                    "prompt_tokens": anthropic_response.get('usage', {}).get('input_tokens', 0),
+                    "completion_tokens": anthropic_response.get('usage', {}).get('output_tokens', 0),
+                    "total_tokens": anthropic_response.get('usage', {}).get('input_tokens', 0) + anthropic_response.get('usage', {}).get('output_tokens', 0)
+                }
+            }
+            
+            return jsonify(openai_response), response.status_code
+    
+    except Exception as e:
+        return jsonify({
+            "error": {
+                "message": f"Error forwarding to Anthropic: {str(e)}",
+                "type": "server_error",
+                "param": None,
+                "code": "forwarding_error"
+            }
+        }), 500
+
+
+def forward_to_google(data, stream):
+    """Forward request to Google Gemini API"""
+    try:
+        # Convert OpenAI format to Gemini format
+        messages = data.get('messages', [])
+        gemini_contents = []
+        
+        for msg in messages:
+            role = 'user' if msg['role'] in ['user', 'system'] else 'model'
+            gemini_contents.append({
+                'role': role,
+                'parts': [{'text': msg['content']}]
+            })
+        
+        model_name = data.get('model', 'gemini-pro')
+        
+        gemini_data = {
+            'contents': gemini_contents,
+        }
+        
+        if 'temperature' in data:
+            gemini_data['generationConfig'] = {'temperature': data['temperature']}
+        
+        # Gemini API uses URL parameters for API key
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent'
+        params = {'key': GOOGLE_API_KEY}
+        
+        response = requests.post(
+            url,
+            params=params,
+            json=gemini_data
+        )
+        
+        if response.status_code != 200:
+            return jsonify(response.json()), response.status_code
+        
+        # Convert Gemini response to OpenAI format
+        gemini_response = response.json()
+        
+        content = ''
+        if 'candidates' in gemini_response and len(gemini_response['candidates']) > 0:
+            candidate = gemini_response['candidates'][0]
+            if 'content' in candidate and 'parts' in candidate['content']:
+                content = candidate['content']['parts'][0].get('text', '')
+        
+        openai_response = {
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": data.get('model'),
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            }
+        }
+        
+        return jsonify(openai_response), 200
+    
+    except Exception as e:
+        return jsonify({
+            "error": {
+                "message": f"Error forwarding to Google: {str(e)}",
+                "type": "server_error",
+                "param": None,
+                "code": "forwarding_error"
+            }
+        }), 500
+
+
+def forward_to_xai(data, stream):
+    """Forward request to xAI (Grok) API"""
+    try:
+        # xAI uses OpenAI-compatible API
+        headers = {
+            'Authorization': f'Bearer {XAI_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(
+            'https://api.x.ai/v1/chat/completions',
+            headers=headers,
+            json=data,
+            stream=stream
+        )
+        
+        if stream:
+            def generate():
+                for chunk in response.iter_content(chunk_size=None):
+                    if chunk:
+                        yield chunk
+            
+            return Response(
+                stream_with_context(generate()),
+                content_type=response.headers.get('content-type', 'text/event-stream')
+            )
+        else:
+            return jsonify(response.json()), response.status_code
+    
+    except Exception as e:
+        return jsonify({
+            "error": {
+                "message": f"Error forwarding to xAI: {str(e)}",
+                "type": "server_error",
+                "param": None,
+                "code": "forwarding_error"
+            }
+        }), 500
 
 
 @app.errorhandler(404)
