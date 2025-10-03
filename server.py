@@ -4,9 +4,10 @@ Hosts an API with OpenAI-compatible endpoints
 """
 
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from functools import wraps
 from dotenv import load_dotenv
+import time
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +50,40 @@ AVAILABLE_MODELS = [
         "parent": None,
     },
 ]
+
+# AI Providers configuration
+AI_PROVIDERS = {
+    'chatgpt': {
+        'name': 'ChatGPT',
+        'url': 'https://chat.openai.com',
+        'check_endpoint': 'https://chat.openai.com/api/auth/session',
+    },
+    'claude': {
+        'name': 'Claude',
+        'url': 'https://claude.ai',
+        'check_endpoint': 'https://claude.ai/api/auth/session',
+    },
+    'grok': {
+        'name': 'Grok',
+        'url': 'https://grok.x.ai',
+        'check_endpoint': 'https://grok.x.ai/api/auth/session',
+    },
+    'gemini': {
+        'name': 'Gemini',
+        'url': 'https://gemini.google.com',
+        'check_endpoint': 'https://gemini.google.com/api/auth/session',
+    },
+    'perplexity': {
+        'name': 'Perplexity',
+        'url': 'https://www.perplexity.ai',
+        'check_endpoint': 'https://www.perplexity.ai/api/auth/session',
+    },
+    'copilot': {
+        'name': 'Microsoft Copilot',
+        'url': 'https://copilot.microsoft.com',
+        'check_endpoint': 'https://copilot.microsoft.com/api/auth/session',
+    },
+}
 
 
 def require_api_key(f):
@@ -103,8 +138,86 @@ def index():
         "message": "OpenAI-Compatible Web Server",
         "version": "1.0.0",
         "endpoints": {
-            "models": "/v1/models"
+            "models": "/v1/models",
+            "access_panel": "/access"
         }
+    })
+
+
+@app.route('/access')
+def access_panel():
+    """AI Provider Access Panel - HTML interface"""
+    return render_template('access.html')
+
+
+@app.route('/api/providers/<provider_id>/status', methods=['GET'])
+def check_provider_status(provider_id):
+    """
+    Check the status of an AI provider
+    Returns whether the provider is accessible
+    """
+    if provider_id not in AI_PROVIDERS:
+        return jsonify({
+            "status": "error",
+            "message": "Unknown provider"
+        }), 404
+    
+    provider = AI_PROVIDERS[provider_id]
+    
+    # For now, we'll simulate checking by attempting to access the provider
+    # In a real implementation, this would check if we can reach the provider
+    # and potentially verify authentication status
+    try:
+        import requests
+        # Simple check - just try to reach the main URL with a timeout
+        response = requests.get(provider['url'], timeout=5, allow_redirects=True)
+        
+        if response.status_code < 500:
+            return jsonify({
+                "status": "working",
+                "message": f"Provider is accessible",
+                "provider": provider['name']
+            })
+        else:
+            return jsonify({
+                "status": "not-working",
+                "message": f"Provider returned error {response.status_code}",
+                "provider": provider['name']
+            })
+    except Exception as e:
+        return jsonify({
+            "status": "not-working",
+            "message": f"Cannot reach provider: {str(e)}",
+            "provider": provider['name']
+        })
+
+
+@app.route('/api/providers/<provider_id>/session', methods=['GET'])
+def get_provider_session(provider_id):
+    """
+    Get session token for an AI provider
+    This is a placeholder implementation - real session token retrieval
+    would require browser automation or user authentication
+    """
+    if provider_id not in AI_PROVIDERS:
+        return jsonify({
+            "error": "Unknown provider"
+        }), 404
+    
+    provider = AI_PROVIDERS[provider_id]
+    
+    # Note: This is a placeholder implementation
+    # In a real-world scenario, you would need to:
+    # 1. Use browser automation (e.g., Selenium, Playwright) to login
+    # 2. Extract session cookies/tokens from the authenticated session
+    # 3. Store and manage these tokens securely
+    # 4. Handle token refresh when they expire
+    
+    return jsonify({
+        "token": f"[PLACEHOLDER-TOKEN-{provider_id.upper()}-{int(time.time())}]",
+        "message": "This is a placeholder token. Real implementation requires browser automation to extract actual session tokens.",
+        "provider": provider['name'],
+        "note": "Session token extraction requires user authentication and proper security measures"
     })
 
 

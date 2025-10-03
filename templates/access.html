@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Provider Access Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .providers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .provider-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .provider-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.15);
+        }
+
+        .provider-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .provider-name {
+            font-size: 1.4em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .status-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: #ccc;
+            transition: background-color 0.3s;
+        }
+
+        .status-indicator.working {
+            background-color: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        }
+
+        .status-indicator.not-working {
+            background-color: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        .status-indicator.checking {
+            background-color: #f59e0b;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .provider-info {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 12px;
+        }
+
+        .provider-status-text {
+            font-size: 0.85em;
+            color: #888;
+            margin-bottom: 16px;
+        }
+
+        .provider-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            flex: 1;
+        }
+
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #5568d3;
+        }
+
+        .btn-secondary {
+            background-color: #e5e7eb;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background-color: #d1d5db;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .session-info {
+            margin-top: 12px;
+            padding: 12px;
+            background-color: #f3f4f6;
+            border-radius: 6px;
+            font-size: 0.85em;
+            display: none;
+        }
+
+        .session-info.show {
+            display: block;
+        }
+
+        .session-token {
+            word-break: break-all;
+            color: #666;
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 0.8em;
+        }
+
+        .refresh-all {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .refresh-all button {
+            padding: 12px 32px;
+            background-color: white;
+            color: #667eea;
+            border: 2px solid white;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .refresh-all button:hover {
+            background-color: transparent;
+            color: white;
+        }
+
+        .info-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .info-panel h2 {
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .info-panel p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI Provider Access Panel</h1>
+        
+        <div class="refresh-all">
+            <button onclick="checkAllProviders()">🔄 Refresh All Status</button>
+        </div>
+
+        <div class="providers-grid" id="providers-grid">
+            <!-- Provider cards will be dynamically generated -->
+        </div>
+
+        <div class="info-panel">
+            <h2>ℹ️ About This Panel</h2>
+            <p>This access panel allows you to monitor and manage connections to various AI language models and chat interfaces.</p>
+            <p><strong>Status Indicators:</strong></p>
+            <ul style="color: #666; margin-left: 20px; line-height: 1.8;">
+                <li><span style="color: #10b981;">🟢 Green</span> - Provider is accessible and ready to use</li>
+                <li><span style="color: #ef4444;">🔴 Red</span> - Provider is not accessible or authentication failed</li>
+                <li><span style="color: #f59e0b;">🟠 Orange</span> - Checking provider status...</li>
+            </ul>
+            <p style="margin-top: 12px;"><strong>Note:</strong> Session tokens are used to authenticate with AI providers through their web interfaces, allowing message forwarding without requiring API keys.</p>
+        </div>
+    </div>
+
+    <script>
+        // Define available AI providers
+        const providers = [
+            {
+                id: 'chatgpt',
+                name: 'ChatGPT',
+                description: 'OpenAI ChatGPT web interface',
+                url: 'https://chat.openai.com'
+            },
+            {
+                id: 'claude',
+                name: 'Claude',
+                description: 'Anthropic Claude web interface',
+                url: 'https://claude.ai'
+            },
+            {
+                id: 'grok',
+                name: 'Grok',
+                description: 'xAI Grok chat interface',
+                url: 'https://grok.x.ai'
+            },
+            {
+                id: 'gemini',
+                name: 'Gemini',
+                description: 'Google Gemini (formerly Bard)',
+                url: 'https://gemini.google.com'
+            },
+            {
+                id: 'perplexity',
+                name: 'Perplexity',
+                description: 'Perplexity AI search assistant',
+                url: 'https://www.perplexity.ai'
+            },
+            {
+                id: 'copilot',
+                name: 'Microsoft Copilot',
+                description: 'Microsoft Copilot chat interface',
+                url: 'https://copilot.microsoft.com'
+            }
+        ];
+
+        // Initialize the page
+        function init() {
+            const grid = document.getElementById('providers-grid');
+            grid.innerHTML = '';
+            
+            providers.forEach(provider => {
+                const card = createProviderCard(provider);
+                grid.appendChild(card);
+            });
+
+            // Check all providers on page load
+            checkAllProviders();
+        }
+
+        // Create a provider card element
+        function createProviderCard(provider) {
+            const card = document.createElement('div');
+            card.className = 'provider-card';
+            card.id = `provider-${provider.id}`;
+            
+            card.innerHTML = `
+                <div class="provider-header">
+                    <div class="provider-name">${provider.name}</div>
+                    <div class="status-indicator checking" id="status-${provider.id}"></div>
+                </div>
+                <div class="provider-info">${provider.description}</div>
+                <div class="provider-status-text" id="status-text-${provider.id}">
+                    Checking status...
+                </div>
+                <div class="provider-actions">
+                    <button class="btn btn-primary" onclick="checkProvider('${provider.id}')" id="check-btn-${provider.id}">
+                        Check Status
+                    </button>
+                    <button class="btn btn-secondary" onclick="getSession('${provider.id}')" id="session-btn-${provider.id}" disabled>
+                        Get Session
+                    </button>
+                </div>
+                <div class="session-info" id="session-info-${provider.id}">
+                    <strong>Session Token:</strong>
+                    <div class="session-token" id="session-token-${provider.id}"></div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        // Check status of a single provider
+        async function checkProvider(providerId) {
+            const statusIndicator = document.getElementById(`status-${providerId}`);
+            const statusText = document.getElementById(`status-text-${providerId}`);
+            const sessionBtn = document.getElementById(`session-btn-${providerId}`);
+            
+            statusIndicator.className = 'status-indicator checking';
+            statusText.textContent = 'Checking status...';
+            
+            try {
+                const response = await fetch(`/api/providers/${providerId}/status`);
+                const data = await response.json();
+                
+                if (data.status === 'working') {
+                    statusIndicator.className = 'status-indicator working';
+                    statusText.textContent = `✓ ${data.message}`;
+                    sessionBtn.disabled = false;
+                } else {
+                    statusIndicator.className = 'status-indicator not-working';
+                    statusText.textContent = `✗ ${data.message}`;
+                    sessionBtn.disabled = true;
+                }
+            } catch (error) {
+                statusIndicator.className = 'status-indicator not-working';
+                statusText.textContent = '✗ Error checking status';
+                sessionBtn.disabled = true;
+            }
+        }
+
+        // Check all providers
+        async function checkAllProviders() {
+            for (const provider of providers) {
+                await checkProvider(provider.id);
+            }
+        }
+
+        // Get session token for a provider
+        async function getSession(providerId) {
+            const sessionInfo = document.getElementById(`session-info-${providerId}`);
+            const sessionToken = document.getElementById(`session-token-${providerId}`);
+            
+            sessionToken.textContent = 'Fetching session token...';
+            sessionInfo.className = 'session-info show';
+            
+            try {
+                const response = await fetch(`/api/providers/${providerId}/session`);
+                const data = await response.json();
+                
+                if (data.token) {
+                    sessionToken.textContent = data.token;
+                } else {
+                    sessionToken.textContent = 'Failed to retrieve session token: ' + (data.error || 'Unknown error');
+                }
+            } catch (error) {
+                sessionToken.textContent = 'Error: ' + error.message;
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
